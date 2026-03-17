@@ -9,7 +9,8 @@ import os
 # TODO: optimize this regex
 pattern = re.compile(r"(\d+)\s*(MPH|KM/H|KPH)\s*([NS])[: ]?(\d+\.\d+)\s*([EW])[: ]?(\d+\.\d+)")
 
-def extract_gps_from_video(video_path, output_gpx, sample_seconds=5, max_speed=None):
+
+def extract_gps_from_video(video_path, output_gpx, track_name, sample_seconds=5, max_speed=None):
     """
     Extract GPS and speed from dashcam video overlay and save as GPX.
     :param video_path: path to dashcam MP4 file
@@ -73,7 +74,7 @@ def extract_gps_from_video(video_path, output_gpx, sample_seconds=5, max_speed=N
     gpx = ET.Element("gpx", version="1.1", creator="dashcam2gps")
     trk = ET.SubElement(gpx, "trk")
     name = ET.SubElement(trk, "name")
-    name.text = "Dashcam Route" # TODO: make configurable
+    name.text = gpx_name
     trkseg = ET.SubElement(trk, "trkseg")
 
     for lat, lon, speed in results:
@@ -93,7 +94,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Extract GPS + speed from dashcam video to GPX")
     parser.add_argument("video_path", help="Path to dashcam video file")
     parser.add_argument("-o", "--output", help="Output GPX file, default: same name as video with .gpx", default=None)
-    parser.add_argument("-n", "--gpx-name", help="GPX track name", default=None)
+    parser.add_argument("-n", "--track-name", help="GPX track name", default="Dashcam Route")
     parser.add_argument("-s", "--sample-seconds", type=int, help="Frame sampling interval in seconds, default: 5", default=5)
     parser.add_argument("-S", "--max-speed", type=int, help="Maximum speed (prevent false readings), default: 150", default=150)
 
@@ -103,4 +104,14 @@ if __name__ == "__main__":
         base, _ = os.path.splitext(args.video_path)
         args.output = base + ".gpx"
 
-    extract_gps_from_video(args.video_path, args.output, sample_seconds=args.sample_seconds, max_speed=args.max_speed)
+    if args.track_name is None:
+        base, _ = os.path.splitext(args.video_path)
+        args.track_name = "Route extracted from " + base
+
+    extract_gps_from_video(
+        args.video_path,
+        args.output,
+        args.track_name
+        sample_seconds=args.sample_seconds,
+        max_speed=args.max_speed,
+    )
