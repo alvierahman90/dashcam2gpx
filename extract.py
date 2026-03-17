@@ -7,10 +7,14 @@ import argparse
 import os
 
 # TODO: optimize this regex
-pattern = re.compile(r"(\d+)\s*(MPH|KM/H|KPH)\s*([NS])[: ]?(\d+\.\d+)\s*([EW])[: ]?(\d+\.\d+)")
+pattern = re.compile(
+    r"(\d+)\s*(MPH|KM/H|KPH)\s*([NS])[: ]?(\d+\.\d+)\s*([EW])[: ]?(\d+\.\d+)"
+)
 
 
-def extract_gps_from_video(video_path, output_gpx, track_name, sample_seconds=5, max_speed=None):
+def extract_gps_from_video(
+    video_path, output_gpx, track_name, sample_seconds=5, max_speed=None
+):
     """
     Extract GPS and speed from dashcam video overlay and save as GPX.
     :param video_path: path to dashcam MP4 file
@@ -30,8 +34,7 @@ def extract_gps_from_video(video_path, output_gpx, track_name, sample_seconds=5,
             break
 
         h, w, _ = frame.shape
-        cropped = frame[h-80:h-20, 20:800]
-        #cv2.imwrite("frame%d.jpg" % frame_count, cropped)
+        cropped = frame[h - 50 : h - 20, 20:500]
 
         gray = cv2.cvtColor(cropped, cv2.COLOR_BGR2GRAY)
         thresh = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)[1]
@@ -42,7 +45,8 @@ def extract_gps_from_video(video_path, output_gpx, track_name, sample_seconds=5,
 
         try:
             text = pytesseract.image_to_string(
-                thresh, config="--psm 7 -c tessedit_char_whitelist=0123456789.SNEWKM/HP "
+                thresh,
+                config="--psm 7 -c tessedit_char_whitelist=0123456789.SNEWKM/HP ",
             )
         except Exception as e:
             print("Exception running OCR: {e=}")
@@ -88,18 +92,38 @@ def extract_gps_from_video(video_path, output_gpx, track_name, sample_seconds=5,
             spd.text = str(speed)
 
     tree = ET.ElementTree(gpx)
-    ET.indent(tree, '\t')
+    ET.indent(tree, "\t")
     tree.write(output_gpx, encoding="utf-8", xml_declaration=True)
 
     print(f"Saved {len(results)} GPS points to {output_gpx}")
 
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Extract GPS + speed from dashcam video to GPX")
+    parser = argparse.ArgumentParser(
+        description="Extract GPS + speed from dashcam video to GPX"
+    )
     parser.add_argument("video_path", help="Path to dashcam video file")
-    parser.add_argument("-o", "--output", help="Output GPX file, default: same name as video with .gpx", default=None)
-    parser.add_argument("-n", "--track-name", help="GPX track name", default="Dashcam Route")
-    parser.add_argument("-s", "--sample-seconds", type=int, help="Frame sampling interval in seconds, default: 5", default=5)
-    parser.add_argument("-S", "--max-speed", type=int, help="Maximum speed (prevent false readings), default: 150", default=150)
+    parser.add_argument(
+        "-o",
+        "--output",
+        help="Output GPX file, default: same name as video with .gpx",
+        default=None,
+    )
+    parser.add_argument("-n", "--track-name", help="GPX track name", default=None)
+    parser.add_argument(
+        "-s",
+        "--sample-seconds",
+        type=int,
+        help="Frame sampling interval in seconds, default: 5",
+        default=5,
+    )
+    parser.add_argument(
+        "-S",
+        "--max-speed",
+        type=int,
+        help="Maximum speed (prevent false readings), default: 150",
+        default=150,
+    )
 
     args = parser.parse_args()
 
