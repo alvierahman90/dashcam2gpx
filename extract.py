@@ -111,7 +111,7 @@ if __name__ == "__main__":
     extract_gps_from_video(
         args.video_path,
         args.output,
-        args.track_name
+        args.track_name,
         sample_seconds=args.sample_seconds,
         max_speed=args.max_speed,
     )
