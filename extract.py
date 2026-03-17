@@ -9,7 +9,7 @@ import os
 # TODO: optimize this regex
 pattern = re.compile(r"(\d+)\s*(MPH|KM/H|KPH)\s*([NS])[: ]?(\d+\.\d+)\s*([EW])[: ]?(\d+\.\d+)")
 
-def extract_gps_from_video(video_path, output_gpx, sample_seconds=5):
+def extract_gps_from_video(video_path, output_gpx, sample_seconds=5, max_speed=None):
     """
     Extract GPS and speed from dashcam video overlay and save as GPX.
     :param video_path: path to dashcam MP4 file
@@ -52,6 +52,9 @@ def extract_gps_from_video(video_path, output_gpx, sample_seconds=5):
             speed, speed_unit, northsouth, lat, eastwest, lon = gps_match.groups()
             speed, lat, lon = int(speed), float(lat), float(lon)
 
+            if max_speed and speed > max_speed:
+                speed = None
+
             if northsouth == "S":
                 lat = -lat
             if eastwest == "W":
@@ -92,6 +95,7 @@ if __name__ == "__main__":
     parser.add_argument("-o", "--output", help="Output GPX file, default: same name as video with .gpx", default=None)
     parser.add_argument("-n", "--gpx-name", help="GPX track name", default=None)
     parser.add_argument("-s", "--sample-seconds", type=int, help="Frame sampling interval in seconds, default: 5", default=5)
+    parser.add_argument("-S", "--max-speed", type=int, help="Maximum speed (prevent false readings), default: 150", default=150)
 
     args = parser.parse_args()
 
@@ -99,4 +103,4 @@ if __name__ == "__main__":
         base, _ = os.path.splitext(args.video_path)
         args.output = base + ".gpx"
 
-    extract_gps_from_video(args.video_path, args.output, sample_seconds=args.sample_seconds)
+    extract_gps_from_video(args.video_path, args.output, sample_seconds=args.sample_seconds, max_speed=args.max_speed)
