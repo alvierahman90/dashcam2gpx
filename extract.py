@@ -19,14 +19,11 @@ def extract_gps_from_video(video_path, output_gpx, track_name, sample_seconds=5,
     """
     cap = cv2.VideoCapture(video_path)
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    if fps == 0:
-        fps = 30 # assuming a 30 FPS video!
-    
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30  # fallback value
     frame_interval = int(fps * sample_seconds)
+
     frame_count = 0
     results = []
-
     while True:
         ret, frame = cap.read()
         if not ret:
@@ -39,15 +36,21 @@ def extract_gps_from_video(video_path, output_gpx, track_name, sample_seconds=5,
         gray = cv2.cvtColor(cropped, cv2.COLOR_BGR2GRAY)
         thresh = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)[1]
 
-        text = pytesseract.image_to_string(
-            thresh,
-            config="--psm 7 -c tessedit_char_whitelist=0123456789.SNEWKM/HP "
+        print(
+            f"processing {100*frame_count/total_frames:.2f}%: {frame_count=} ", end=""
         )
-        print(f"{text=} ", end='')
+
+        try:
+            text = pytesseract.image_to_string(
+                thresh, config="--psm 7 -c tessedit_char_whitelist=0123456789.SNEWKM/HP "
+            )
+        except Exception as e:
+            print("Exception running OCR: {e=}")
+            continue
+
+        print(f"{text=} ", end="")
 
         gps_match = pattern.search(text)
-
-        print(f"processing {100*frame_count/total_frames:.2f}%: {frame_count=} ", end="")
 
         if gps_match:
             speed, speed_unit, northsouth, lat, eastwest, lon = gps_match.groups()
@@ -71,7 +74,7 @@ def extract_gps_from_video(video_path, output_gpx, track_name, sample_seconds=5,
 
     cap.release()
 
-    gpx = ET.Element("gpx", version="1.1", creator="dashcam2gps")
+    gpx = ET.Element("gpx", version="1.1", creator="dashcam2gpx")
     trk = ET.SubElement(gpx, "trk")
     name = ET.SubElement(trk, "name")
     name.text = gpx_name
