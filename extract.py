@@ -74,7 +74,7 @@ def extract_gps_from_video(video_path, output_gpx, track_name, sample_seconds=5,
     gpx = ET.Element("gpx", version="1.1", creator="dashcam2gps")
     trk = ET.SubElement(gpx, "trk")
     name = ET.SubElement(trk, "name")
-    name.text = gpx_name
+    name.text = track_name
     trkseg = ET.SubElement(trk, "trkseg")
 
     for lat, lon, speed in results:
