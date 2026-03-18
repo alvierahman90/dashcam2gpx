@@ -1,19 +1,51 @@
 # -*- coding: utf-8 -*-
-import cv2
-import pytesseract
+
+
+import argparse
+from datetime import datetime, timedelta
+import math
+import os
 import re
 import xml.etree.ElementTree as ET
-import argparse
-import os
+
+
+import cv2
+import pytesseract
 
 # TODO: optimize this regex
 pattern = re.compile(
     r"(\d+)\s*(MPH|KM/H|KPH)\s*([NS])[: ]?(\d+\.\d+)\s*([EW])[: ]?(\d+\.\d+)"
 )
 
+EARTH_RADIUS = 6371000
+
+def haversine_distance(lat1, lon1, lat2, lon2, sphere_radius=EARTH_RADIUS):
+    lat1 = lat1 *(math.pi/180)
+    lat2 = lat2 *(math.pi/180)
+    lon1 = lon1 *(math.pi/180)
+    lon2 = lon2 *(math.pi/180)
+
+    dlat = lat2-lat1
+    dlon = lon2-lon1
+
+    a = (math.sin(dlat/2)**2) + math.cos(lat1) * math.cos(lat2) * (math.sin(dlon/2)**2)
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+
+    return sphere_radius * c
+
+def to_meters_per_second(value, unit):
+    if unit.lower() == "mph":
+         return value*0.44704
+    if unit.lower() in ["kph", "km/h", "kmh"]:
+        return value*1000/3600
+    if unit.lower() == "m/s":
+        return value
+
+    return None
+
 
 def extract_gps_from_video(
-    video_path, output_gpx, track_name, sample_seconds=5, max_speed=None
+    video_path, output_gpx, track_name, sample_seconds=5, max_speed=None, start_time=None
 ):
     """
     Extract GPS and speed from dashcam video overlay and save as GPX.
@@ -21,6 +53,8 @@ def extract_gps_from_video(
     :param output_gpx: output GPX file path
     :param sample_seconds: interval (in seconds) between frames to analyze
     """
+
+    start_time = datetime.now()
     cap = cv2.VideoCapture(video_path)
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     fps = cap.get(cv2.CAP_PROP_FPS) or 30  # fallback value
@@ -29,6 +63,8 @@ def extract_gps_from_video(
     frame_count = 0
     results = []
     while True:
+        print(flush=True)
+        skip = False
         ret, frame = cap.read()
         if not ret:
             break
@@ -40,7 +76,7 @@ def extract_gps_from_video(
         thresh = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)[1]
 
         print(
-            f"processing {100*frame_count/total_frames:.2f}%: {frame_count=} ", end=""
+            f"{str(datetime.now() - start_time)} elapsed, processing {100*frame_count/total_frames:.2f}%: {frame_count=} ", end=""
         )
 
         try:
@@ -60,6 +96,8 @@ def extract_gps_from_video(
             speed, speed_unit, northsouth, lat, eastwest, lon = gps_match.groups()
             speed, lat, lon = int(speed), float(lat), float(lon)
 
+            speed = to_meters_per_second(speed, speed_unit)
+
             if max_speed and speed > max_speed:
                 speed = None
 
@@ -68,10 +106,26 @@ def extract_gps_from_video(
             if eastwest == "W":
                 lon = -lon
 
-            print(f"{lat=} {lon=} {speed=} {speed_unit=}")
-            results.append((lat, lon, speed))
+            video_time = cap.get(cv2.CAP_PROP_POS_MSEC)/1000
+            average_speed = 0
+            if results:
+                distance_from_last_point = haversine_distance(
+                    lat, lon, results[-1][0], results[-1][1]
+                )
+                average_speed = distance_from_last_point / (video_time - results[-1][3])
+
+            print(f"{lat=} {lon=} speed={speed or 0:.2f} (m/s) {speed_unit=} {average_speed=:.2f} ", end="")
+
+            if average_speed > max_speed:
+                skip = True
+                print(f"(average speed too high) ", end="")
+
+            if skip:
+                print("(skipping) ")
+            else:
+                results.append((lat, lon, speed, video_time))
         else:
-            print("no match :(")
+            print("no match :(", end="")
 
         frame_count += frame_interval
         cap.set(cv2.CAP_PROP_POS_FRAMES, frame_count)
@@ -84,8 +138,13 @@ def extract_gps_from_video(
     name.text = track_name
     trkseg = ET.SubElement(trk, "trkseg")
 
-    for lat, lon, speed in results:
+    for lat, lon, speed, timedelta_seconds in results:
         trkpt = ET.SubElement(trkseg, "trkpt", lat=str(lat), lon=str(lon))
+        time = ET.SubElement(trkpt, "time")
+        time.text = (start_time + timedelta(seconds=timedelta_seconds)).isoformat()
+        ele = ET.SubElement(trkpt, "ele")
+        ele.text = "0"
+
         if speed is not None:
             ext = ET.SubElement(trkpt, "extensions")
             spd = ET.SubElement(ext, "speed")
@@ -121,8 +180,15 @@ if __name__ == "__main__":
         "-S",
         "--max-speed",
         type=int,
-        help="Maximum speed (prevent false readings), default: 150",
-        default=150,
+        help="Maximum speed (m/s) to prevent false readings, default: 60",
+        default=60,
+    )
+    parser.add_argument(
+        "-T",
+        "--start-time",
+        type=datetime.fromisoformat,
+        help="ISO formatted start time of recording, default: unix epoch",
+        default=datetime.fromtimestamp(0),
     )
 
     args = parser.parse_args()
@@ -141,4 +207,5 @@ if __name__ == "__main__":
         args.track_name,
         sample_seconds=args.sample_seconds,
         max_speed=args.max_speed,
+        start_time=args.start_time,
     )
