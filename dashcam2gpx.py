@@ -19,25 +19,29 @@ pattern = re.compile(
 
 EARTH_RADIUS = 6371000
 
+
 def haversine_distance(lat1, lon1, lat2, lon2, sphere_radius=EARTH_RADIUS):
-    lat1 = lat1 *(math.pi/180)
-    lat2 = lat2 *(math.pi/180)
-    lon1 = lon1 *(math.pi/180)
-    lon2 = lon2 *(math.pi/180)
+    lat1 = lat1 * (math.pi / 180)
+    lat2 = lat2 * (math.pi / 180)
+    lon1 = lon1 * (math.pi / 180)
+    lon2 = lon2 * (math.pi / 180)
 
-    dlat = lat2-lat1
-    dlon = lon2-lon1
+    dlat = lat2 - lat1
+    dlon = lon2 - lon1
 
-    a = (math.sin(dlat/2)**2) + math.cos(lat1) * math.cos(lat2) * (math.sin(dlon/2)**2)
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+    a = (math.sin(dlat / 2) ** 2) + math.cos(lat1) * math.cos(lat2) * (
+        math.sin(dlon / 2) ** 2
+    )
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
     return sphere_radius * c
 
+
 def to_meters_per_second(value, unit):
     if unit.lower() == "mph":
-         return value*0.44704
+        return value * 0.44704
     if unit.lower() in ["kph", "km/h", "kmh"]:
-        return value*1000/3600
+        return value * 1000 / 3600
     if unit.lower() == "m/s":
         return value
 
@@ -45,7 +49,12 @@ def to_meters_per_second(value, unit):
 
 
 def extract_gps_from_video(
-    video_path, output_gpx, track_name, sample_seconds=5, max_speed=None, start_time=None
+    video_path,
+    output_gpx,
+    track_name,
+    sample_seconds=5,
+    max_speed=None,
+    start_time=None,
 ):
     """
     Extract GPS and speed from dashcam video overlay and save as GPX.
@@ -64,10 +73,12 @@ def extract_gps_from_video(
     results = []
     while True:
         print(flush=True)
-        skip = False
         ret, frame = cap.read()
         if not ret:
             break
+
+        frame_count += frame_interval
+        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_count)
 
         h, w, _ = frame.shape
         cropped = frame[h - 50 : h - 20, 20:500]
@@ -76,7 +87,8 @@ def extract_gps_from_video(
         thresh = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)[1]
 
         print(
-            f"{str(datetime.now() - start_time)} elapsed, processing {100*frame_count/total_frames:.2f}%: {frame_count=} ", end=""
+            f"{str(datetime.now() - start_time)} elapsed, processing {100*frame_count/total_frames:.2f}%: {frame_count=} ",
+            end="",
         )
 
         try:
@@ -92,43 +104,41 @@ def extract_gps_from_video(
 
         gps_match = pattern.search(text)
 
-        if gps_match:
-            speed, speed_unit, northsouth, lat, eastwest, lon = gps_match.groups()
-            speed, lat, lon = int(speed), float(lat), float(lon)
-
-            speed = to_meters_per_second(speed, speed_unit)
-
-            if max_speed and speed > max_speed:
-                speed = None
-
-            if northsouth == "S":
-                lat = -lat
-            if eastwest == "W":
-                lon = -lon
-
-            video_time = cap.get(cv2.CAP_PROP_POS_MSEC)/1000
-            average_speed = 0
-            if results:
-                distance_from_last_point = haversine_distance(
-                    lat, lon, results[-1][0], results[-1][1]
-                )
-                average_speed = distance_from_last_point / (video_time - results[-1][3])
-
-            print(f"{lat=} {lon=} speed={speed or 0:.2f} (m/s) {speed_unit=} {average_speed=:.2f} ", end="")
-
-            if average_speed > max_speed:
-                skip = True
-                print(f"(average speed too high) ", end="")
-
-            if skip:
-                print("(skipping) ")
-            else:
-                results.append((lat, lon, speed, video_time))
-        else:
+        if not gps_match:
             print("no match :(", end="")
+            continue
 
-        frame_count += frame_interval
-        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_count)
+        speed, speed_unit, northsouth, lat, eastwest, lon = gps_match.groups()
+        speed, lat, lon = int(speed), float(lat), float(lon)
+
+        speed = to_meters_per_second(speed, speed_unit)
+
+        if max_speed and speed > max_speed:
+            speed = None
+
+        if northsouth == "S":
+            lat = -lat
+        if eastwest == "W":
+            lon = -lon
+
+        video_time = cap.get(cv2.CAP_PROP_POS_MSEC) / 1000
+        average_speed = 0
+        if results:
+            distance_from_last_point = haversine_distance(
+                lat, lon, results[-1][0], results[-1][1]
+            )
+            average_speed = distance_from_last_point / (video_time - results[-1][3])
+
+        print(
+            f"{lat=} {lon=} speed={speed or 0:.2f} (m/s) {speed_unit=} {average_speed=:.2f} ",
+            end="",
+        )
+
+        if average_speed > max_speed:
+            print(f"(average speed too high, skipping) ", end="")
+            continue
+
+        results.append((lat, lon, speed, video_time))
 
     cap.release()
 
